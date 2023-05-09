@@ -1,0 +1,27 @@
+{
+	"name": "mc-bot",
+	"version": "1.0.0",
+	"description": "",
+	"main": "bot.js",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/zhaungsont/mc-bot.git"
+	},
+	"keywords": [],
+	"author": "Michael Chuang",
+	"license": "ISC",
+	"bugs": {
+		"url": "https://github.com/zhaungsont/mc-bot/issues"
+	},
+	"homepage": "https://github.com/zhaungsont/mc-bot#readme",
+	"dependencies": {
+		"dotenv": "^16.0.3",
+		"mineflayer": "^4.8.1",
+		"mineflayer-pathfinder": "^2.4.2",
+		"node-fetch": "^3.3.1",
+		"openai": "^3.2.1"
+	}
+}

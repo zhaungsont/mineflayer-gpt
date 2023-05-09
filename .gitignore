@@ -1,3 +1,7 @@
+# Sensitive Files
+ACCOUNT.json
+IP.json
+
 # Logs
 logs
 *.log
