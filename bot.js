@@ -2,17 +2,44 @@ const mineflayer = require('mineflayer');
 const ACCOUNT = require('./ACCOUNT.json');
 const IP = require('./IP.json');
 require('dotenv').config();
-// const fetch = require('node-fetch');
+const fs = require('fs');
+const { format } = require('date-fns');
+const {
+	pathfinder,
+	Movements,
+	goals: { GoalNear, GoalFollow },
+} = require('mineflayer-pathfinder');
 
-const { Configuration, OpenAIApi } = require('openai');
-const configuration = new Configuration({
-	apiKey: process.env.OPENAI_KEY,
-});
-const openai = new OpenAIApi(configuration);
+// Check if the state file exists
+if (!fs.existsSync('log.json')) {
+	// If not, create and initialize it with an empty array
+	fs.writeFileSync('log.json', '[]', 'utf8');
+}
 
-const pathfinder = require('mineflayer-pathfinder').pathfinder;
-const Movements = require('mineflayer-pathfinder').Movements;
-const { GoalNear } = require('mineflayer-pathfinder').goals;
+// Function to add a log entry
+function logAction(action, input) {
+	// Read the current state from the file
+	const currentState = JSON.parse(fs.readFileSync('log.json', 'utf8'));
+
+	// Create a new log entry
+	const logEntry = {
+		timestamp: format(new Date(), 'yyyy-MM-dd HH:mm:ss'),
+		action,
+		input,
+	};
+
+	// Add the new log entry to the current state
+	currentState.push(logEntry);
+
+	// Write the updated state back to the file
+	fs.writeFileSync('log.json', JSON.stringify(currentState, null, 2), 'utf8');
+}
+logAction('Init', 'MC bot start');
+// const { Configuration, OpenAIApi } = require('openai');
+// const configuration = new Configuration({
+// 	apiKey: process.env.OPENAI_KEY,
+// });
+// const openai = new OpenAIApi(configuration);
 
 const chatMessages = [];
 // const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
@@ -20,8 +47,6 @@ const chatMessages = [];
 // const pvp = require('mineflayer-pvp').plugin;
 // const armorManager = require('mineflayer-armor-manager');
 // const autoeat = require('mineflayer-auto-eat');
-// const GoalBlock = goals.GoalBlock;
-// const { GoalNear } = require('mineflayer-pathfinder').goals;
 // const commandsListJson = require('./bot-commands.json');
 // const botGibberish = require('./botGibberish.json');
 // const botAtGibberish = require('./botAtGibberish.json');
@@ -51,8 +76,6 @@ const bot = mineflayer.createBot(options);
 
 //bot plugins
 bot.loadPlugin(pathfinder);
-
-// bot.loadPlugin(pathfinder);
 // bot.loadPlugin(pvp);
 // bot.loadPlugin(autoeat);
 // bot.loadPlugin(armorManager);
@@ -62,33 +85,56 @@ bot.on('kicked', console.log);
 bot.on('error', console.log);
 
 bot.once('spawn', () => {
-	const defaultMove = new Movements(bot);
+	// initialAIConfig();
 
-	initialAIConfig();
-
-	bot.on('chat', function (username, message) {
-		// console.log('chat detected', process.env.OPENAI_KEY);
+	bot.on('chat', (username, message) => {
 		if (username === bot.username) return;
-		console.log('GG!');
-		requestGPT(message);
 
-		// const target = bot.players[username] ? bot.players[username].entity : null;
-		// if (message.toLowerCase() === 'come') {
-		// 	if (!target) {
-		// 		bot.chat("I don't see you !");
-		// 		return;
-		// 	}
-		// 	const p = target.position;
+		logAction('Received Chat', `message: ${message}`);
+		switch (message) {
+			case 'come':
+				followHandler(username);
+				break;
 
-		// 	bot.pathfinder.setMovements(defaultMove);
-		// 	bot.pathfinder.setGoal(new GoalNear(p.x, p.y, p.z, 1));
-		// }
+			case 'stop follow':
+				stopFollowHandler();
+				break;
 
-		// if (message === 'test') {
-		// 	fetchData();
-		// }
+			default:
+				bot.chat('喔是哦');
+				break;
+		}
+	});
+
+	bot.on('physicsTick', () => {
+		lookAtNearestPlayer();
 	});
 });
+
+function stopFollowHandler() {
+	bot.pathfinder.stop();
+	bot.chat('ok I stopped');
+}
+
+function followHandler(username) {
+	const RANGE_GOAL = 5; // get within this radius of the player
+
+	// const defaultMove = new Movements(bot);
+	// defaultMove.canDig = false;
+	// defaultMove.scafoldingBlocks = [];
+
+	const target = bot.players[username]?.entity;
+	if (!target) {
+		bot.chat("I don't see you !");
+		return;
+	}
+	bot.chat(`Coming, ${username} !`);
+	// const { x: playerX, y: playerY, z: playerZ } = target.position;
+	// bot.pathfinder.setMovements(defaultMove);
+	// bot.pathfinder.setGoal(new GoalNear(playerX, playerY, playerZ, RANGE_GOAL));
+	const goal = new GoalFollow(bot.players[username].entity, RANGE_GOAL);
+	bot.pathfinder.setGoal(goal, true);
+}
 
 async function requestGPT(message) {
 	chatMessages.push({
@@ -806,17 +852,16 @@ async function initialAIConfig() {
 // 	bot.chat("嗨嗨 我是Sakana's bot! ٩(ˊᗜˋ*)و 當前版本: " + botVersion);
 // });
 
-// // Constantly Look At Neares Player
-// function lookAtNearestPlayer() {
-// 	// const playerFilter = (entity) => entity.type === 'player';
-// 	const playerEntity = bot.nearestEntity(); //若只要追蹤玩家那就在括號中加入 playerFilter
+// Constantly Look At Neares Player
+function lookAtNearestPlayer() {
+	// const playerFilter = (entity) => entity.type === 'player';
+	const playerEntity = bot.nearestEntity(); //若只要追蹤玩家那就在括號中加入 playerFilter
 
-// 	if (!playerEntity) return;
+	if (!playerEntity) return;
 
-// 	const pos = playerEntity.position.offset(0, playerEntity.height, 0);
-// 	bot.lookAt(pos);
-// }
-// bot.on('physicTick', lookAtNearestPlayer);
+	const pos = playerEntity.position.offset(0, playerEntity.height, 0);
+	bot.lookAt(pos);
+}
 
 // // 自動進食
 // bot.once('spawn', () => {
@@ -1077,7 +1122,7 @@ async function initialAIConfig() {
 // 	missionState = false;
 // }
 
-// bot.on('physicTick', () => {
+// bot.on('physicsTick', () => {
 // 	if (!guardPos) return;
 
 // 	const filter = (e) =>
