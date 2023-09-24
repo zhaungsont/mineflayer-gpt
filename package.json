@@ -1,4 +1,5 @@
 {
+	"type": "module",
 	"name": "mc-bot",
 	"version": "1.0.0",
 	"description": "",
@@ -23,6 +24,6 @@
 		"mineflayer": "^4.14.0",
 		"mineflayer-pathfinder": "^2.4.5",
 		"node-fetch": "^3.3.1",
-		"openai": "^3.2.1"
+		"openai": "^4.10.0"
 	}
 }

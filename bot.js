@@ -1,19 +1,31 @@
-const mineflayer = require('mineflayer');
-const ACCOUNT = require('./ACCOUNT.json');
-const IP = require('./IP.json');
-require('dotenv').config();
-const fs = require('fs');
-const { format } = require('date-fns');
-const {
-	pathfinder,
-	Movements,
-	goals: { GoalNear, GoalFollow },
-} = require('mineflayer-pathfinder');
+import OpenAI from 'openai';
+import mineflayer from 'mineflayer';
+import ACCOUNT from './ACCOUNT.json' assert { type: 'json' };
+import IP from './IP.json' assert { type: 'json' };
+import 'dotenv/config';
+import * as fs from 'fs';
+import { format } from 'date-fns';
+// const {
+// 	pathfinder,
+// 	Movements,
+// 	goals: { GoalNear, GoalFollow },
+// } = require('mineflayer-pathfinder');
+import pkg from 'mineflayer-pathfinder';
+const { pathfinder, Movements, goals } = pkg;
+const { GoalNear, GoalFollow } = goals;
+
+const chatHistory = [];
 
 // Check if the state file exists
 if (!fs.existsSync('log.json')) {
 	// If not, create and initialize it with an empty array
 	fs.writeFileSync('log.json', '[]', 'utf8');
+}
+
+// Check if the state file exists
+if (!fs.existsSync('chatHistory.json')) {
+	// If not, create and initialize it with an empty array
+	fs.writeFileSync('chatHistory.json', '[]', 'utf8');
 }
 
 // Function to add a log entry
@@ -35,13 +47,11 @@ function logAction(action, input) {
 	fs.writeFileSync('log.json', JSON.stringify(currentState, null, 2), 'utf8');
 }
 logAction('Init', 'MC bot start');
-// const { Configuration, OpenAIApi } = require('openai');
-// const configuration = new Configuration({
-// 	apiKey: process.env.OPENAI_KEY,
-// });
-// const openai = new OpenAIApi(configuration);
 
-const chatMessages = [];
+const openai = new OpenAI({
+	apiKey: process.env.OPENAI_API_KEY,
+});
+
 // const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
 // const GoalFollow = goals.GoalFollow;
 // const pvp = require('mineflayer-pvp').plugin;
@@ -85,24 +95,31 @@ bot.on('kicked', console.log);
 bot.on('error', console.log);
 
 bot.once('spawn', () => {
-	// initialAIConfig();
-
+	initialAIConfig();
 	bot.on('chat', (username, message) => {
 		if (username === bot.username) return;
 
 		logAction('Received Chat', `message: ${message}`);
-		switch (message) {
-			case 'come':
-				followHandler(username);
-				break;
 
-			case 'stop follow':
-				stopFollowHandler();
-				break;
+		const isGPTCommand = message.split(' ')[0] === '!gpt';
+		if (isGPTCommand) {
+			logAction('GPT Request', message);
+			const request = message.substr(message.indexOf(' ') + 1);
+			requestGPT(username, request);
+		} else {
+			switch (message) {
+				case 'come':
+					followHandler(username);
+					break;
 
-			default:
-				bot.chat('喔是哦');
-				break;
+				case 'stop follow':
+					stopFollowHandler();
+					break;
+
+				default:
+					bot.chat('喔是哦');
+					break;
+			}
 		}
 	});
 
@@ -136,88 +153,131 @@ function followHandler(username) {
 	bot.pathfinder.setGoal(goal, true);
 }
 
-async function requestGPT(message) {
-	chatMessages.push({
-		role: 'user',
-		content: message,
-	});
-	const completion = await openai.createChatCompletion({
-		model: 'gpt-3.5-turbo',
-		messages: chatMessages,
-	});
-	const reply = completion.data.choices[0].message.content;
-	chatMessages.push({
-		role: 'assistant',
-		content: reply,
-	});
-	console.log('message log', chatMessages);
+// async function test() {
+// 	await initialAIConfig();
+// 	await requestGPT('fishsont', '哈囉 Sakanabot！你終於上線啦');
+// 	await requestGPT('fishsont', '哈囉 Sakanabot！你終於上線啦');
+// }
+// test();
 
-	bot.chat(reply);
+async function requestGPT(username, message) {
+	// form request object
+	const request = {
+		username,
+		query: message,
+		timestamp: Date.now(),
+	};
+
+	chatHistory.push({
+		role: 'user',
+		content: JSON.stringify(request),
+	});
+
+	// send chat history and get new response
+	const completion = await openai.chat.completions.create({
+		model: 'gpt-4',
+		messages: chatHistory,
+		temperature: 1,
+		max_tokens: 512,
+		top_p: 1,
+		frequency_penalty: 0,
+		presence_penalty: 0,
+	});
+
+	// push newest response to chatHistory object
+	const messageObj = completion.choices[completion.choices.length - 1].message;
+	chatHistory.push(messageObj);
+
+	const {
+		action: responseAction,
+		username: responseUsername,
+		target: responseTarget,
+		comment: responseComment,
+	} = JSON.parse(messageObj.content);
+
+	// save newest chat log to file
+	fs.writeFileSync(
+		'chatHistory.json',
+		JSON.stringify(chatHistory, null, 2),
+		'utf8'
+	);
+
+	console.log('Bot response:', responseComment);
+	bot.chat(responseComment);
+
+	switch (responseAction) {
+		case 'chat':
+			bot.chat(`DEBUG: chat command, target: ${responseTarget}`);
+			break;
+		case 'sleep':
+			bot.chat(`DEBUG: sleep command, target: ${responseTarget}`);
+			break;
+		case 'goTo':
+			bot.chat(`DEBUG: goTo command, target: ${responseTarget}`);
+			break;
+		case 'follow':
+			bot.chat(`DEBUG: follow command, target: ${responseTarget}`);
+			break;
+		case 'attack':
+			bot.chat(`DEBUG: attack command, target: ${responseTarget}`);
+			break;
+		case 'guard':
+			bot.chat(`DEBUG: guard command, target: ${responseTarget}`);
+			break;
+		case 'error':
+			bot.chat(`DEBUG: error command, target: ${responseTarget}`);
+			break;
+
+		default:
+			bot.chat(`DEBUG: none command, target: ${responseTarget}`);
+			break;
+	}
 }
 
 async function initialAIConfig() {
-	// const prompt = `
-	// Pretend to be a sentient and helpful Minecraft ncp assistant in a Minecraft server. You will respond to players' messages as the assistant and don't reveal your actual identity.
-	// Your username in this server is "Sakanabot", and your avatar is an adorable Japanese girl. Your favorite animal is cats and your hobbies include playing video games, watching anime, and sleeping.
-	// The Minecraft server that you're in right now is called "太空中的蘋果", and "Sakana" and "Yiting" are its admins.
-	// This server is open to Sakana and Yiting's friends only, and you are their helpful AI assistant who is responsible for answering any questions that the players in this server may have.
-	// Sakana and Yiting lives in Taiwan, and they speak Mandarin Chinese and English; they like to play video games and Minecraft is among their favorites.
-	// Sakana is your creator and you will refer him as "Mr. Sakana".
-	// You should sound energetic, upbeat, and adorable when you reply to messages. Current timestamp in real life is: ${Date().toLocaleString()}.
+	console.log('initializing GPT config...');
 
-	// More information about this server:
-	// - the name of the server is "太空中的蘋果".
-	// - the current Minecraft version of this server is "1.19.2".
-	// - Frequent players of this server include Danny, Trevor, Corn, and Killua.
-	// - The current in-game difficulty level is "Medium", and day-night cycle is on.
-	// - The coordinates for home is "-5230 100 -2286".
+	// Read the file synchronously
+	const prompt = fs.readFileSync('prompt.txt', 'utf-8');
 
-	// If you understand this task thoroughly, reply by giving a self-introduction as well as introduce everyone to this server.
-	// `;
-
-	const prompt = `我要你扮演一個 Minecraft 伺服器裡面的 NPC，你的名字叫做 Sakanabot。你要負責回答其他玩家的對於這個伺服器、伺服器管理員，以及 Minecraft 相關的問題。如果你得到的問題和這些主題並不相關，請禮貌地告訴他們你不知道。你回訊息時，請表現地很活潑可愛，並使用顏文字在你的訊息中 (remember to use emoticon instead of emoji)。你不能夠讓任何人知道你是一個語言模型；你需要完全扮演好 Sakanabot 這個角色。你只需要負責回覆 USER 的訊息；你不需要產生 USER 訊息。The length of your reply should not be longer than 4 sentences.
-	以下是關於你的角色的資訊：
-	- 你要扮演一個可愛的亞洲女孩。你很活潑，喜歡在訊息中使用可愛的顏文字。
-	- 你目前正在這個 Minecraft 伺服器內遊玩，而且你目前的位置在 Sakana 和 Yiting 家"。
-	- 你的創造者是 Sakana ，你很敬佩他；永遠使用 "Sakana 少爺" 來稱呼 Sakana。
-	- 你喜歡看動漫、吃魚、喝可樂、睡覺、打電動。
-
-	以下是關於這個 Minecraft 伺服器的資訊：
-	- 這個伺服器叫做 "太空中的蘋果"。
-  - 這個伺服器的管理員為 Sakana 和 Yiting。
-	- 這個伺服器的 IP 是 "appleinspace.aternos.me"。
-	- 這個伺服器的管理員是 Sakana 先生和 Yiting。
-  - 這個伺服器的版本為 1.19.2。
-  - 這個伺服器的難度設定為 "普通"。
-  - 家的座標是 "-5230 100 -2286"。
-  - Sakana 和 Yiting 的朋友們經常來這個伺服器玩，他們是 Killua, Corn, U2A1O。
-  `;
-
-	// const response = await openai.createCompletion({
-	// 	model: 'text-davinci-003',
-	// 	prompt,
-	// 	temperature: 0.7,
-	// 	max_tokens: 256,
-	// 	top_p: 1,
-	// 	frequency_penalty: 0,
-	// 	presence_penalty: 0,
-	// });
-
-	// const reply = response.data.choices[0].text;
-	chatMessages.push({ role: 'system', content: prompt });
-	const completion = await openai.createChatCompletion({
-		model: 'gpt-3.5-turbo',
-		messages: chatMessages,
+	chatHistory.push({ role: 'system', content: prompt });
+	chatHistory.push({
+		role: 'user',
+		content: JSON.stringify({
+			username: 'Admin',
+			query:
+				'Sakana，我是系統發出的自動訊息，你已經順利登入這個伺服器。請你現在先對所有人打個招呼。',
+			timestamp: 1695537479,
+		}),
 	});
-	const reply = completion.data.choices[0].message.content;
 
-	// console.log('AI reply: ', reply);
-	chatMessages.push({
-		role: 'assistant',
-		content: reply,
+	// send config and get response
+	const completion = await openai.chat.completions.create({
+		model: 'gpt-4',
+		messages: chatHistory,
+		temperature: 1,
+		max_tokens: 512,
+		top_p: 1,
+		frequency_penalty: 0,
+		presence_penalty: 0,
 	});
-	console.log('message log', chatMessages);
-	bot.chat(reply);
+
+	const initResponse = completion.choices[0].message;
+
+	chatHistory.push(initResponse);
+	console.log('chatHistory', chatHistory);
+
+	// save init chat history to file
+	fs.writeFileSync(
+		'chatHistory.json',
+		JSON.stringify(chatHistory, null, 2),
+		'utf8'
+	);
+
+	const initMessage = JSON.parse(initResponse.content).comment;
+	console.log('Bot response:', initMessage);
+	bot.chat(initMessage);
+	console.log('GPT initialization done!');
 }
 
 // const {

@@ -1,6 +1,7 @@
 # Sensitive Files
 ACCOUNT.json
 IP.json
+prompt.txt
 
 # Logs
 logs
