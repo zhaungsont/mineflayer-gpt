@@ -80,6 +80,7 @@ const options = {
 	password: ACCOUNT['password'],
 	logErrors: false,
 	auth: 'microsoft', //if this acc is MS acc
+	version: '1.19.2',
 };
 const bot = mineflayer.createBot(options);
 // exports.bot = bot;
